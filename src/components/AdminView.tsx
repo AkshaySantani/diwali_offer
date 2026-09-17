@@ -35,7 +35,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 }) => {
   // Login State
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -269,13 +269,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter admin password"
                 required
                 className="w-full px-3.5 py-2.5 bg-[#140303] border border-[#F5A623]/40 rounded-xl text-[#FFF8E7] focus:outline-none focus:ring-2 focus:ring-[#F5A623]"
               />
             </div>
 
             <div className="p-2.5 rounded-lg bg-[#3A0C0C]/50 border border-[#F5A623]/20 text-[11px] text-[#F5D77F]/80">
-              💡 Admin credentials: <strong>admin / admin123</strong>
+              💡 Credentials: <strong>admin</strong> (Default: <code>admin123</code> or your custom <code>ADMIN_PASSWORD</code>)
             </div>
 
             <button

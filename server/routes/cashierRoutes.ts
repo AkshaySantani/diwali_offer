@@ -18,10 +18,15 @@ const handleLoginRoute = async (req: Request, res: Response) => {
     let role: 'ADMIN' | 'CASHIER' | null = null;
     let userId = 1;
 
-    if (trimmedUser === 'admin' && password === 'admin123') {
+    const adminUser = (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase();
+    const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+    const cashierUser = (process.env.CASHIER_USERNAME || 'cashier').trim().toLowerCase();
+    const cashierPass = process.env.CASHIER_PASSWORD || 'cashier123';
+
+    if (trimmedUser === adminUser && password === adminPass) {
       role = 'ADMIN';
       userId = 1;
-    } else if (trimmedUser === 'cashier' && password === 'cashier123') {
+    } else if (trimmedUser === cashierUser && password === cashierPass) {
       role = 'CASHIER';
       userId = 2;
     }
