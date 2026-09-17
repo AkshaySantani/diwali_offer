@@ -1,0 +1,6 @@
+{
+  "name": "Akshay Footwear - Diwali Spin & Win",
+  "description": "Diwali promotional campaign spin & win wheel with real-time cashier redemption, customer registration, and admin analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
