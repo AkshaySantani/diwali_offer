@@ -2,84 +2,86 @@ import { Router, Response } from 'express';
 import { getDb } from '../db.js';
 import { requireAuth, AuthenticatedRequest } from '../auth.js';
 import { maskPhone } from '../utils.js';
+import { getActivePrizes, updatePrizeProbabilities } from '../prizes.js';
 
 export const adminRouter = Router();
 
-// Stats summary
+// GET /api/admin/stats - Live metrics calculated directly from Neon diwali_spins
 adminRouter.get('/stats', requireAuth(['ADMIN']), async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const db = await getDb();
 
-    // 1. Total counts
-    const totalSpinsRes = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM spins;`);
+    // 1. Total spins
+    const totalSpinsRes = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM diwali_spins;`);
     const totalSpins = parseInt(totalSpinsRes.rows[0]?.count || '0', 10);
 
-    const totalCustomersRes = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM customers;`);
+    // 2. Total unique customers by WhatsApp
+    const totalCustomersRes = await db.query<{ count: string }>(
+      `SELECT COUNT(DISTINCT whatsapp) as count FROM diwali_spins;`
+    );
     const totalCustomers = parseInt(totalCustomersRes.rows[0]?.count || '0', 10);
 
-    const redeemedSpinsRes = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM spins WHERE status = 'REDEEMED';`);
+    // 3. Redeemed rewards
+    const redeemedSpinsRes = await db.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM diwali_spins WHERE redeemed = true OR status = 'REDEEMED';`
+    );
     const redeemedSpins = parseInt(redeemedSpinsRes.rows[0]?.count || '0', 10);
 
-    const pendingSpinsRes = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM spins WHERE status = 'PENDING';`);
+    // 4. Pending rewards
+    const pendingSpinsRes = await db.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM diwali_spins WHERE status = 'PENDING';`
+    );
     const pendingSpins = parseInt(pendingSpinsRes.rows[0]?.count || '0', 10);
 
-    // 2. Active campaign
-    const campaignRes = await db.query<{ id: number; name: string; active: boolean; created_at: string }>(
-      `SELECT id, name, active, created_at FROM campaigns ORDER BY id DESC LIMIT 1;`
-    );
-    const campaign = campaignRes.rows[0] || null;
-
-    // 3. Breakdown by prize
-    const prizesRes = await db.query<{
-      id: number;
-      name: string;
-      type: string;
-      value: number;
-      probability: number;
-      active: boolean;
-      display_order: number;
-    }>(`SELECT id, name, type, value, probability, active, display_order FROM prizes ORDER BY display_order ASC;`);
-
-    const prizeStatsMap: Record<number, { won: number; redeemed: number }> = {};
-    for (const p of prizesRes.rows) {
-      prizeStatsMap[p.id] = { won: 0, redeemed: 0 };
-    }
-
-    const spinsBreakdown = await db.query<{ prize_id: number; status: string; count: string }>(`
-      SELECT prize_id, status, COUNT(*) as count
-      FROM spins
-      GROUP BY prize_id, status;
+    // 5. Prize counts breakdown from diwali_spins
+    const breakdownRes = await db.query<{ prize_won: string; status: string; count: string }>(`
+      SELECT prize_won, status, COUNT(*) as count
+      FROM diwali_spins
+      GROUP BY prize_won, status;
     `);
 
-    for (const row of spinsBreakdown.rows) {
-      const pid = row.prize_id;
+    const prizeStatsMap: Record<string, { won: number; redeemed: number }> = {
+      'free socks': { won: 0, redeemed: 0 },
+      '10% off': { won: 0, redeemed: 0 },
+      'free belt': { won: 0, redeemed: 0 },
+      '15% off': { won: 0, redeemed: 0 },
+      'better luck next time': { won: 0, redeemed: 0 },
+    };
+
+    for (const row of breakdownRes.rows) {
+      const key = (row.prize_won || '').trim().toLowerCase();
       const count = parseInt(row.count, 10);
-      if (prizeStatsMap[pid]) {
-        prizeStatsMap[pid].won += count;
-        if (row.status === 'REDEEMED') {
-          prizeStatsMap[pid].redeemed += count;
-        }
+      if (!prizeStatsMap[key]) {
+        prizeStatsMap[key] = { won: 0, redeemed: 0 };
+      }
+      prizeStatsMap[key].won += count;
+      if (row.status === 'REDEEMED') {
+        prizeStatsMap[key].redeemed += count;
       }
     }
 
-    const prizeBreakdown = prizesRes.rows.map((p) => {
-      const stats = prizeStatsMap[p.id] || { won: 0, redeemed: 0 };
+    const currentPrizes = getActivePrizes();
+    const prizeBreakdown = currentPrizes.map((p) => {
+      const key = p.name.trim().toLowerCase();
+      const stats = prizeStatsMap[key] || { won: 0, redeemed: 0 };
       const actualPercentage = totalSpins > 0 ? (stats.won / totalSpins) * 100 : 0;
       return {
         id: p.id,
         name: p.name,
         type: p.type,
-        value: Number(p.value),
-        probability: Number(p.probability),
+        value: p.value,
+        probability: p.probability,
         active: p.active,
-        displayOrder: p.display_order,
+        displayOrder: p.displayOrder,
         wonCount: stats.won,
         redeemedCount: stats.redeemed,
         actualPercentage: Number(actualPercentage.toFixed(1)),
       };
     });
 
-    const redemptionRate = totalSpins > 0 ? Number(((redeemedSpins / (totalSpins - (prizeStatsMap[5]?.won || 0) || 1)) * 100).toFixed(1)) : 0;
+    const nonWinningCount = prizeStatsMap['better luck next time']?.won || 0;
+    const winningSpins = totalSpins - nonWinningCount;
+    const redemptionRate = winningSpins > 0 ? Number(((redeemedSpins / winningSpins) * 100).toFixed(1)) : 0;
 
     return res.json({
       success: true,
@@ -89,17 +91,28 @@ adminRouter.get('/stats', requireAuth(['ADMIN']), async (_req: AuthenticatedRequ
         redeemedSpins,
         pendingSpins,
         redemptionRate: Math.min(redemptionRate, 100),
-        campaign,
+        prizeCounts: {
+          freeSocks: prizeStatsMap['free socks']?.won || 0,
+          tenPercentOff: prizeStatsMap['10% off']?.won || 0,
+          freeBelt: prizeStatsMap['free belt']?.won || 0,
+          fifteenPercentOff: prizeStatsMap['15% off']?.won || 0,
+          betterLuckNextTime: prizeStatsMap['better luck next time']?.won || 0,
+        },
+        campaign: {
+          id: 1,
+          name: 'Akshay Footwear Diwali Dhamaka 2026',
+          active: true,
+        },
         prizeBreakdown,
       },
     });
   } catch (err: any) {
     console.error('[AdminRouter] Stats error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to fetch admin stats' });
+    return res.status(500).json({ success: false, message: 'Failed to fetch admin stats from database' });
   }
 });
 
-// All spins table with search & filter
+// GET /api/admin/spins - Query records from diwali_spins with filters & pagination
 adminRouter.get('/spins', requireAuth(['ADMIN']), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const search = req.query.search ? String(req.query.search).trim() : '';
@@ -109,175 +122,124 @@ adminRouter.get('/spins', requireAuth(['ADMIN']), async (req: AuthenticatedReque
 
     const db = await getDb();
 
-    let whereClauses: string[] = [];
-    let params: any[] = [];
+    const whereClauses: string[] = [];
+    const params: any[] = [];
     let paramIndex = 1;
 
     if (search) {
-      whereClauses.push(`(c.name ILIKE $${paramIndex} OR c.whatsapp_number LIKE $${paramIndex} OR s.reward_code ILIKE $${paramIndex})`);
+      whereClauses.push(
+        `(customer ILIKE $${paramIndex} OR whatsapp LIKE $${paramIndex} OR reward_code ILIKE $${paramIndex})`
+      );
       params.push(`%${search}%`);
       paramIndex++;
     }
 
-    if (status && status !== 'ALL') {
-      whereClauses.push(`s.status = $${paramIndex}`);
+    if (status !== 'ALL') {
+      whereClauses.push(`status = $${paramIndex}`);
       params.push(status);
       paramIndex++;
     }
 
-    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const whereSQL = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    const countSql = `
-      SELECT COUNT(*) as total
-      FROM spins s
-      JOIN customers c ON s.customer_id = c.id
-      JOIN prizes p ON s.prize_id = p.id
-      ${whereSql};
-    `;
+    // Total matching count
+    const countRes = await db.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM diwali_spins ${whereSQL};`,
+      params
+    );
+    const totalMatching = parseInt(countRes.rows[0]?.count || '0', 10);
 
-    const countRes = await db.query<{ total: string }>(countSql, params);
-    const totalRecords = parseInt(countRes.rows[0]?.total || '0', 10);
-
-    const dataSql = `
-      SELECT s.id, s.reward_code, s.status, s.created_at, s.redeemed_at, s.redeemed_by,
-             c.id as customer_id, c.name as customer_name, c.whatsapp_number,
-             p.id as prize_id, p.name as prize_name, p.type as prize_type, p.value as prize_value
-      FROM spins s
-      JOIN customers c ON s.customer_id = c.id
-      JOIN prizes p ON s.prize_id = p.id
-      ${whereSql}
-      ORDER BY s.id DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1};
-    `;
-
-    params.push(limit, offset);
-    const dataRes = await db.query(dataSql, params);
+    // Query records
+    const recordsRes = await db.query(
+      `SELECT spin_id, date_time, customer, whatsapp, prize_won, prize_type, prize_value,
+              reward_code, status, redeemed, redeemed_by, redeemed_at
+       FROM diwali_spins
+       ${whereSQL}
+       ORDER BY spin_id DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1};`,
+      [...params, limit, offset]
+    );
 
     return res.json({
       success: true,
-      total: totalRecords,
-      spins: dataRes.rows.map((row: any) => ({
-        id: row.id,
+      total: totalMatching,
+      limit,
+      offset,
+      spins: recordsRes.rows.map((row: any) => ({
+        id: row.spin_id,
         rewardCode: row.reward_code,
         status: row.status,
-        createdAt: row.created_at,
+        redeemed: row.redeemed,
+        createdAt: row.date_time,
         redeemedAt: row.redeemed_at,
         redeemedBy: row.redeemed_by,
+        customerName: row.customer,
+        whatsappNumber: row.whatsapp,
+        maskedPhone: maskPhone(row.whatsapp),
+        prizeName: row.prize_won,
+        prizeType: row.prize_type,
+        prizeValue: Number(row.prize_value),
         customer: {
-          id: row.customer_id,
-          name: row.customer_name,
-          whatsappNumber: row.whatsapp_number,
-          maskedPhone: maskPhone(row.whatsapp_number),
+          name: row.customer,
+          whatsappNumber: row.whatsapp,
         },
         prize: {
-          id: row.prize_id,
-          name: row.prize_name,
+          name: row.prize_won,
           type: row.prize_type,
           value: Number(row.prize_value),
         },
       })),
     });
   } catch (err: any) {
-    console.error('[AdminRouter] Spins error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to fetch spins data' });
+    console.error('[AdminRouter] Get spins error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch spin records' });
   }
 });
 
-// Update prize probabilities (Strict validation: must sum to 100%)
-const handleUpdatePrizes = async (req: AuthenticatedRequest, res: Response) => {
+// PUT /api/admin/prizes/probabilities - Update prize probabilities
+adminRouter.put('/prizes/probabilities', requireAuth(['ADMIN']), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { prizes } = req.body;
-    if (!Array.isArray(prizes) || prizes.length === 0) {
-      return res.status(400).json({ success: false, message: 'Prizes list is required' });
+    const { probabilities } = req.body;
+    if (!Array.isArray(probabilities) || probabilities.length === 0) {
+      return res.status(400).json({ success: false, message: 'Array of probabilities is required' });
     }
 
-    // Check sum of active probabilities
-    let activeSum = 0;
-    for (const p of prizes) {
-      const prob = Number(p.probability);
-      if (isNaN(prob) || prob < 0) {
-        return res.status(400).json({ success: false, message: `Invalid probability for prize "${p.name || p.id}"` });
-      }
-      if (p.active !== false) {
-        activeSum += prob;
-      }
+    const result = updatePrizeProbabilities(probabilities);
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: result.message });
     }
 
-    if (Math.round(activeSum * 100) / 100 !== 100) {
-      return res.status(400).json({
-        success: false,
-        message: `Total active probabilities must sum to exactly 100%. Current sum is ${activeSum}%.`,
-      });
-    }
-
-    const db = await getDb();
-
-    // Update in database
-    for (const p of prizes) {
-      await db.query(
-        `UPDATE prizes
-         SET probability = $1,
-             active = $2
-         WHERE id = $3;`,
-        [Number(p.probability), p.active !== false, p.id]
-      );
-    }
-
-    return res.json({ success: true, message: 'Prize configuration updated successfully!' });
+    return res.json({ success: true, message: 'Prize probabilities updated successfully' });
   } catch (err: any) {
-    console.error('[AdminRouter] Update prizes error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update prizes' });
-  }
-};
-
-adminRouter.put('/prizes', requireAuth(['ADMIN']), handleUpdatePrizes);
-adminRouter.post('/prizes', requireAuth(['ADMIN']), handleUpdatePrizes);
-
-// Toggle campaign status
-adminRouter.put('/campaign', requireAuth(['ADMIN']), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { active, name } = req.body;
-    const db = await getDb();
-
-    if (typeof active === 'boolean') {
-      await db.query(`UPDATE campaigns SET active = $1;`, [active]);
-    }
-    if (name && typeof name === 'string') {
-      await db.query(`UPDATE campaigns SET name = $1;`, [name.trim()]);
-    }
-
-    return res.json({ success: true, message: 'Campaign settings updated successfully!' });
-  } catch (err: any) {
-    console.error('[AdminRouter] Campaign toggle error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update campaign settings' });
+    console.error('[AdminRouter] Update probabilities error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update prize probabilities' });
   }
 });
 
-// Export CSV of all spins
+// GET /api/admin/export-csv - Export exact Excel format specified by user
 adminRouter.get('/export-csv', requireAuth(['ADMIN']), async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const db = await getDb();
     const result = await db.query(`
-      SELECT s.id, s.reward_code, s.status, s.created_at, s.redeemed_at, s.redeemed_by,
-             c.name as customer_name, c.whatsapp_number,
-             p.name as prize_name, p.type as prize_type, p.value as prize_value
-      FROM spins s
-      JOIN customers c ON s.customer_id = c.id
-      JOIN prizes p ON s.prize_id = p.id
-      ORDER BY s.id DESC;
+      SELECT spin_id, date_time, customer, whatsapp, prize_won, prize_type, prize_value,
+             reward_code, status, redeemed, redeemed_by, redeemed_at
+      FROM diwali_spins
+      ORDER BY spin_id DESC;
     `);
 
+    // EXACT columns in the EXACT order requested:
+    // Spin ID, Date & Time, Customer, WhatsApp, Prize Won, Prize Type, Prize Value, Reward Code, Status, Redeemed, Redeemed By
     const headers = [
       'Spin ID',
       'Date & Time',
-      'Customer Name',
-      'WhatsApp Number',
+      'Customer',
+      'WhatsApp',
       'Prize Won',
       'Prize Type',
       'Prize Value',
       'Reward Code',
       'Status',
-      'Redeemed At',
+      'Redeemed',
       'Redeemed By',
     ];
 
@@ -292,23 +254,23 @@ adminRouter.get('/export-csv', requireAuth(['ADMIN']), async (_req: Authenticate
     for (const row of result.rows as any[]) {
       csvRows.push(
         [
-          row.id,
-          new Date(row.created_at).toISOString(),
-          escapeCsv(row.customer_name),
-          escapeCsv(row.whatsapp_number),
-          escapeCsv(row.prize_name),
+          row.spin_id,
+          escapeCsv(new Date(row.date_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })),
+          escapeCsv(row.customer),
+          escapeCsv(row.whatsapp),
+          escapeCsv(row.prize_won),
           escapeCsv(row.prize_type),
           row.prize_value,
-          escapeCsv(row.reward_code || 'N/A'),
+          escapeCsv(row.reward_code || ''),
           escapeCsv(row.status),
-          row.redeemed_at ? new Date(row.redeemed_at).toISOString() : 'N/A',
-          escapeCsv(row.redeemed_by || 'N/A'),
+          escapeCsv(row.redeemed ? 'TRUE' : 'FALSE'),
+          escapeCsv(row.redeemed_by || ''),
         ].join(',')
       );
     }
 
-    const csvContent = csvRows.join('\n');
-    res.setHeader('Content-Type', 'text/csv');
+    const csvContent = csvRows.join('\r\n') + '\r\n';
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="akshay_footwear_diwali_spins.csv"');
     return res.send(csvContent);
   } catch (err: any) {

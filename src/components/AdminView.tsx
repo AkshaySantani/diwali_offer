@@ -24,12 +24,14 @@ interface AdminViewProps {
   authUser: AuthUser | null;
   token: string | null;
   onLoginSuccess: (user: AuthUser, token: string) => void;
+  onLogout: () => void;
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({
   authUser,
   token,
   onLoginSuccess,
+  onLogout,
 }) => {
   // Login State
   const [username, setUsername] = useState('admin');
@@ -76,7 +78,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
           }))
         );
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with admin credentials.');
+        onLogout();
+        return;
+      }
       console.error('Failed to load admin stats:', err);
     } finally {
       setIsLoadingStats(false);
@@ -96,7 +103,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
         setSpinsList(res.spins);
         setTotalSpins(res.total);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with admin credentials.');
+        onLogout();
+        return;
+      }
       console.error('Failed to load spins:', err);
     } finally {
       setIsLoadingSpins(false);
@@ -161,6 +173,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
         fetchStats();
       }
     } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with admin credentials.');
+        onLogout();
+        return;
+      }
       setPrizeSaveMsg({ text: err.message || 'Failed to update prizes', isError: true });
     } finally {
       setIsSavingPrizes(false);
@@ -177,7 +194,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
       if (res.success) {
         fetchStats();
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with admin credentials.');
+        onLogout();
+        return;
+      }
       console.error('Failed to toggle campaign:', err);
     } finally {
       setIsTogglingCampaign(false);
@@ -190,6 +212,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
     try {
       await api.downloadCsv(token);
     } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with admin credentials.');
+        onLogout();
+        return;
+      }
       alert(err.message || 'Failed to download CSV');
     }
   };
@@ -326,33 +353,46 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-[#240606] border border-[#F5A623]/30 shadow-lg">
           <div className="flex items-center justify-between text-[#F5D77F]/70 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Wheel Spins</span>
+            <span>Total Spins</span>
             <Award className="w-5 h-5 text-[#F5A623]" />
           </div>
           <div className="text-3xl font-extrabold font-['Poppins'] text-[#FFF8E7] mt-2">
             {stats?.totalSpins ?? 0}
           </div>
           <div className="text-[11px] text-[#F5D77F]/60 mt-1">
-            Across all registered Diwali customers
+            Total records in Neon diwali_spins
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-[#240606] border border-[#F5A623]/30 shadow-lg">
           <div className="flex items-center justify-between text-[#F5D77F]/70 text-xs font-semibold uppercase tracking-wider">
-            <span>Registered Customers</span>
+            <span>Total Customers</span>
             <Users className="w-5 h-5 text-[#F5A623]" />
           </div>
           <div className="text-3xl font-extrabold font-['Poppins'] text-[#FFF8E7] mt-2">
             {stats?.totalCustomers ?? 0}
           </div>
           <div className="text-[11px] text-[#F5D77F]/60 mt-1">
-            Unique WhatsApp numbers captured
+            Unique WhatsApp numbers
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-[#240606] border border-[#F5A623]/30 shadow-lg">
+          <div className="flex items-center justify-between text-[#F5D77F]/70 text-xs font-semibold uppercase tracking-wider">
+            <span>Pending Rewards</span>
+            <TrendingUp className="w-5 h-5 text-[#F5A623]" />
+          </div>
+          <div className="text-3xl font-extrabold font-['Poppins'] text-[#FFE082] mt-2">
+            {stats?.pendingSpins ?? 0}
+          </div>
+          <div className="text-[11px] text-[#F5D77F]/60 mt-1">
+            Status: PENDING
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-[#240606] border border-emerald-500/30 shadow-lg">
           <div className="flex items-center justify-between text-emerald-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Redeemed In-Store</span>
+            <span>Redeemed Rewards</span>
             <CheckCircle2 className="w-5 h-5 text-emerald-400" />
           </div>
           <div className="text-3xl font-extrabold font-['Poppins'] text-emerald-300 mt-2">
@@ -362,17 +402,66 @@ export const AdminView: React.FC<AdminViewProps> = ({
             Redemption rate: {stats?.redemptionRate ?? 0}%
           </div>
         </div>
+      </div>
 
-        <div className="p-5 rounded-2xl bg-[#240606] border border-[#F5A623]/30 shadow-lg">
-          <div className="flex items-center justify-between text-[#F5D77F]/70 text-xs font-semibold uppercase tracking-wider">
-            <span>Pending Vouchers</span>
-            <TrendingUp className="w-5 h-5 text-[#F5A623]" />
+      {/* Prize Won Counters Live from Neon Database */}
+      <div className="bg-[#240606] border border-[#F5A623]/40 rounded-2xl p-5 shadow-xl">
+        <div className="flex items-center justify-between mb-3 border-b border-[#F5A623]/20 pb-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#F5D77F] flex items-center gap-2">
+            <span>🎁 Neon Live Prize Distribution</span>
+            <span className="text-[10px] text-[#F5A623] bg-[#F5A623]/10 px-2 py-0.5 rounded-full border border-[#F5A623]/30">Live Table Counts</span>
+          </h2>
+          <span className="text-[11px] text-[#F5D77F]/60">Table: diwali_spins</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="p-3.5 rounded-xl bg-[#1A0505] border border-[#F5A623]/30 flex flex-col justify-between">
+            <span className="text-xs font-semibold text-[#F5D77F]/80 flex items-center gap-1.5">
+              <span>🧦</span> Free Socks (35%)
+            </span>
+            <div className="text-2xl font-extrabold text-[#FFE082] mt-1.5 font-['Poppins']">
+              {stats?.prizeCounts?.freeSocks ?? 0}
+            </div>
+            <span className="text-[10px] text-[#F5D77F]/60 mt-0.5">Product reward</span>
           </div>
-          <div className="text-3xl font-extrabold font-['Poppins'] text-[#FFE082] mt-2">
-            {stats?.pendingSpins ?? 0}
+
+          <div className="p-3.5 rounded-xl bg-[#1A0505] border border-[#F5A623]/30 flex flex-col justify-between">
+            <span className="text-xs font-semibold text-[#F5D77F]/80 flex items-center gap-1.5">
+              <span>💰</span> 10% OFF (35%)
+            </span>
+            <div className="text-2xl font-extrabold text-[#FFE082] mt-1.5 font-['Poppins']">
+              {stats?.prizeCounts?.tenPercentOff ?? 0}
+            </div>
+            <span className="text-[10px] text-[#F5D77F]/60 mt-0.5">Discount voucher</span>
           </div>
-          <div className="text-[11px] text-[#F5D77F]/60 mt-1">
-            Customers with prizes yet to visit
+
+          <div className="p-3.5 rounded-xl bg-[#1A0505] border border-[#F5A623]/30 flex flex-col justify-between">
+            <span className="text-xs font-semibold text-[#F5D77F]/80 flex items-center gap-1.5">
+              <span>👔</span> Free Belt (10%)
+            </span>
+            <div className="text-2xl font-extrabold text-[#FFE082] mt-1.5 font-['Poppins']">
+              {stats?.prizeCounts?.freeBelt ?? 0}
+            </div>
+            <span className="text-[10px] text-[#F5D77F]/60 mt-0.5">Product reward</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-[#1A0505] border border-[#F5A623]/30 flex flex-col justify-between">
+            <span className="text-xs font-semibold text-[#F5D77F]/80 flex items-center gap-1.5">
+              <span>🎉</span> 15% OFF (10%)
+            </span>
+            <div className="text-2xl font-extrabold text-[#FFE082] mt-1.5 font-['Poppins']">
+              {stats?.prizeCounts?.fifteenPercentOff ?? 0}
+            </div>
+            <span className="text-[10px] text-[#F5D77F]/60 mt-0.5">Discount voucher</span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-[#1A0505] border border-[#F5A623]/30 flex flex-col justify-between col-span-2 sm:col-span-1">
+            <span className="text-xs font-semibold text-[#F5D77F]/80 flex items-center gap-1.5">
+              <span>😄</span> Better Luck Next Time (10%)
+            </span>
+            <div className="text-2xl font-extrabold text-[#FFF8E7]/70 mt-1.5 font-['Poppins']">
+              {stats?.prizeCounts?.betterLuckNextTime ?? 0}
+            </div>
+            <span className="text-[10px] text-[#F5D77F]/60 mt-0.5">No reward</span>
           </div>
         </div>
       </div>

@@ -19,6 +19,13 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     const error = new Error(errorMsg) as any;
     error.data = data;
     error.status = response.status;
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('af_diwali_token');
+        localStorage.removeItem('af_diwali_user');
+        window.dispatchEvent(new CustomEvent('auth:expired', { detail: { message: errorMsg } }));
+      } catch (e) {}
+    }
     throw error;
   }
 
@@ -48,10 +55,13 @@ export const api = {
     });
   },
 
-  playSpin: async (customerId: number): Promise<{ success: boolean; spin: SpinResult; message?: string }> => {
+  playSpin: async (
+    customerId: number,
+    customerData?: { name?: string; whatsappNumber?: string }
+  ): Promise<{ success: boolean; spin: SpinResult; message?: string }> => {
     return request('/spin/play', {
       method: 'POST',
-      body: JSON.stringify({ customerId }),
+      body: JSON.stringify({ customerId, ...customerData }),
     });
   },
 
@@ -67,6 +77,17 @@ export const api = {
     return request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+    });
+  },
+
+  verifySession: async (
+    token: string
+  ): Promise<{
+    success: boolean;
+    user: { id: number; username: string; role: 'ADMIN' | 'CASHIER' };
+  }> => {
+    return request('/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
     });
   },
 

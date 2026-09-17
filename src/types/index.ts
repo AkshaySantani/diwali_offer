@@ -59,6 +59,13 @@ export interface AdminStats {
   redeemedSpins: number;
   pendingSpins: number;
   redemptionRate: number;
+  prizeCounts?: {
+    freeSocks: number;
+    tenPercentOff: number;
+    freeBelt: number;
+    fifteenPercentOff: number;
+    betterLuckNextTime: number;
+  };
   campaign: {
     id: number;
     name: string;

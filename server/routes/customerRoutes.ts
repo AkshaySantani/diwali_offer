@@ -1,13 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db.js';
 import { normalizePhoneNumber, isValidIndianPhone } from '../utils.js';
+import { storePendingCustomer, DEFAULT_PRIZES } from '../prizes.js';
 
 export const customerRouter = Router();
 
-// Register customer or return existing registration
+// Register customer or return existing spin record from diwali_spins
 customerRouter.post('/register', async (req: Request, res: Response) => {
   try {
-    const { name, whatsappNumber, marketingConsent } = req.body;
+    const { name, whatsappNumber } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
       return res.status(400).json({ success: false, message: 'Please enter a valid full name' });
@@ -27,105 +28,70 @@ customerRouter.post('/register', async (req: Request, res: Response) => {
 
     const db = await getDb();
 
-    // Check active campaign
-    const campaignRes = await db.query<{ id: number; name: string; active: boolean }>(
-      `SELECT id, name, active FROM campaigns WHERE active = true ORDER BY id DESC LIMIT 1;`
-    );
-
-    if (campaignRes.rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Diwali promotional campaign is currently not active. Please ask store staff.',
-      });
-    }
-
-    const activeCampaign = campaignRes.rows[0];
-
-    // Find customer by phone
-    let customerRes = await db.query<{
-      id: number;
-      name: string;
-      whatsapp_number: string;
-      marketing_consent: boolean;
-    }>(`SELECT id, name, whatsapp_number, marketing_consent FROM customers WHERE whatsapp_number = $1;`, [cleanPhone]);
-
-    let customer = customerRes.rows[0];
-
-    if (!customer) {
-      // Create new customer
-      const insertRes = await db.query<{
-        id: number;
-        name: string;
-        whatsapp_number: string;
-        marketing_consent: boolean;
-      }>(
-        `INSERT INTO customers (name, whatsapp_number, marketing_consent)
-         VALUES ($1, $2, $3)
-         RETURNING id, name, whatsapp_number, marketing_consent;`,
-        [name.trim(), cleanPhone, marketingConsent !== false]
-      );
-      customer = insertRes.rows[0];
-    } else {
-      // Update name if changed
-      await db.query(`UPDATE customers SET name = $1 WHERE id = $2;`, [name.trim(), customer.id]);
-      customer.name = name.trim();
-    }
-
-    // Check if customer already spun in this campaign
-    const spinRes = await db.query<{
-      id: number;
-      prize_id: number;
-      reward_code: string | null;
-      status: string;
-      created_at: string;
-      prize_name: string;
+    // Check if customer already has a spin recorded in diwali_spins
+    const existingSpinRes = await db.query<{
+      spin_id: number;
+      date_time: string;
+      customer: string;
+      whatsapp: string;
+      prize_won: string;
       prize_type: string;
       prize_value: number;
-      display_order: number;
+      reward_code: string | null;
+      status: string;
+      redeemed: boolean;
+      redeemed_by: string | null;
+      redeemed_at: string | null;
     }>(
-      `SELECT s.id, s.prize_id, s.reward_code, s.status, s.created_at,
-              p.name as prize_name, p.type as prize_type, p.value as prize_value, p.display_order
-       FROM spins s
-       JOIN prizes p ON s.prize_id = p.id
-       WHERE s.customer_id = $1 AND s.campaign_id = $2;`,
-      [customer.id, activeCampaign.id]
+      `SELECT spin_id, date_time, customer, whatsapp, prize_won, prize_type, prize_value,
+              reward_code, status, redeemed, redeemed_by, redeemed_at
+       FROM diwali_spins
+       WHERE whatsapp = $1
+       LIMIT 1;`,
+      [cleanPhone]
     );
 
-    if (spinRes.rows.length > 0) {
-      const prevSpin = spinRes.rows[0];
+    if (existingSpinRes.rows.length > 0) {
+      const prev = existingSpinRes.rows[0];
+      const matchedPrize = DEFAULT_PRIZES.find((p) => p.name.toLowerCase() === prev.prize_won.toLowerCase());
+      const sliceIndex = matchedPrize ? matchedPrize.displayOrder : 0;
+
       return res.json({
         success: true,
         hasSpun: true,
         customer: {
-          id: customer.id,
-          name: customer.name,
-          whatsappNumber: customer.whatsapp_number,
+          id: prev.spin_id,
+          name: prev.customer,
+          whatsappNumber: prev.whatsapp,
         },
         previousSpin: {
-          id: prevSpin.id,
-          prizeName: prevSpin.prize_name,
-          prizeType: prevSpin.prize_type,
-          prizeValue: Number(prevSpin.prize_value),
-          rewardCode: prevSpin.reward_code,
-          status: prevSpin.status,
-          createdAt: prevSpin.created_at,
-          sliceIndex: prevSpin.display_order,
+          id: prev.spin_id,
+          prizeName: prev.prize_won,
+          prizeType: prev.prize_type,
+          prizeValue: Number(prev.prize_value),
+          rewardCode: prev.reward_code,
+          status: prev.status,
+          createdAt: prev.date_time,
+          sliceIndex: sliceIndex,
         },
-        message: 'Welcome back! You have already played your Diwali spin for this campaign.',
+        message: 'Welcome back! You have already played your Diwali spin. Only 1 spin per customer.',
       });
     }
+
+    // Customer has not spun yet - store in pending memory cache to bridge to /spin/play
+    const tempCustomerId = storePendingCustomer(name.trim(), cleanPhone);
 
     return res.json({
       success: true,
       hasSpun: false,
       customer: {
-        id: customer.id,
-        name: customer.name,
-        whatsappNumber: customer.whatsapp_number,
+        id: tempCustomerId,
+        name: name.trim(),
+        whatsappNumber: cleanPhone,
       },
     });
   } catch (err: any) {
     console.error('[CustomerRouter] Register error:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error while registering customer' });
+    return res.status(500).json({ success: false, message: 'Failed to process customer registration' });
   }
 });

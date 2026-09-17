@@ -8,12 +8,14 @@ interface CashierViewProps {
   authUser: AuthUser | null;
   token: string | null;
   onLoginSuccess: (user: AuthUser, token: string) => void;
+  onLogout: () => void;
 }
 
 export const CashierView: React.FC<CashierViewProps> = ({
   authUser,
   token,
   onLoginSuccess,
+  onLogout,
 }) => {
   // Login State
   const [username, setUsername] = useState('cashier');
@@ -41,7 +43,12 @@ export const CashierView: React.FC<CashierViewProps> = ({
       if (res.success) {
         setRecentList(res.redemptions);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with cashier credentials.');
+        onLogout();
+        return;
+      }
       console.error('Failed to fetch recent redemptions:', err);
     } finally {
       setIsLoadingRecent(false);
@@ -90,6 +97,11 @@ export const CashierView: React.FC<CashierViewProps> = ({
         setSearchError('No prize or spin record found.');
       }
     } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with cashier credentials.');
+        onLogout();
+        return;
+      }
       setSearchResults([]);
       setSearchError(err.message || 'Lookup failed.');
     } finally {
@@ -134,6 +146,11 @@ export const CashierView: React.FC<CashierViewProps> = ({
         fetchRecent();
       }
     } catch (err: any) {
+      if (err?.status === 401 || err?.message?.includes('session token') || err?.message?.includes('Authentication required')) {
+        setLoginError('Session expired. Please log in with cashier credentials.');
+        onLogout();
+        return;
+      }
       setSearchError(err.message || 'Failed to redeem prize.');
     } finally {
       setIsRedeeming(false);

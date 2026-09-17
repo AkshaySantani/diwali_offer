@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { getDb } from './server/db.js';
+import { getDb, initSchemaAndSeed } from './server/db.js';
 import { customerRouter } from './server/routes/customerRoutes.js';
 import { spinRouter } from './server/routes/spinRoutes.js';
 import { cashierRouter } from './server/routes/cashierRoutes.js';
@@ -15,12 +15,12 @@ async function startServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Initialize DB & Seed
+  // Initialize Neon PostgreSQL Database & verify single table diwali_spins
   try {
-    await getDb();
-    console.log('[Server] PGlite Database initialized and seeded successfully.');
+    await initSchemaAndSeed();
+    console.log('[Server] Neon PostgreSQL database initialized successfully.');
   } catch (err) {
-    console.error('[Server] Failed to initialize database:', err);
+    console.error('[Server] Failed to initialize Neon database:', err);
   }
 
   // Health check

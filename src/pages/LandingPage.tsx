@@ -73,8 +73,8 @@ export const LandingPage: React.FC = () => {
 
       const customerId = regRes.customer.id;
 
-      // 2. Play spin on the server
-      const spinRes = await api.playSpin(customerId);
+      // 2. Play spin on the server - saves result into Neon diwali_spins
+      const spinRes = await api.playSpin(customerId, { name, whatsappNumber });
       if (!spinRes.success || !spinRes.spin) {
         throw new Error(spinRes.message || 'Failed to initiate spin');
       }
