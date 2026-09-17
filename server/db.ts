@@ -41,31 +41,41 @@ export async function getDb(): Promise<DbClient> {
   };
 }
 
+let schemaInitialized = false;
+let schemaInitPromise: Promise<void> | null = null;
+
 export async function initSchemaAndSeed(): Promise<void> {
-  const p = getPool();
-  console.log('[Neon Database] Verifying diwali_spins table on Neon PostgreSQL...');
+  if (schemaInitialized) return;
+  if (!schemaInitPromise) {
+    schemaInitPromise = (async () => {
+      const p = getPool();
+      console.log('[Neon Database] Verifying diwali_spins table on Neon PostgreSQL...');
 
-  // Create single official diwali_spins table
-  await p.query(`
-    CREATE TABLE IF NOT EXISTS diwali_spins (
-      spin_id SERIAL PRIMARY KEY,
-      date_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      customer VARCHAR(255) NOT NULL,
-      whatsapp VARCHAR(20) NOT NULL,
-      prize_won VARCHAR(100) NOT NULL,
-      prize_type VARCHAR(50) NOT NULL,
-      prize_value NUMERIC(10, 2) NOT NULL DEFAULT 0,
-      reward_code VARCHAR(50),
-      status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-      redeemed BOOLEAN NOT NULL DEFAULT false,
-      redeemed_by VARCHAR(100),
-      redeemed_at TIMESTAMPTZ
-    );
+      // Create single official diwali_spins table
+      await p.query(`
+        CREATE TABLE IF NOT EXISTS diwali_spins (
+          spin_id SERIAL PRIMARY KEY,
+          date_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          customer VARCHAR(255) NOT NULL,
+          whatsapp VARCHAR(20) NOT NULL,
+          prize_won VARCHAR(100) NOT NULL,
+          prize_type VARCHAR(50) NOT NULL,
+          prize_value NUMERIC(10, 2) NOT NULL DEFAULT 0,
+          reward_code VARCHAR(50),
+          status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+          redeemed BOOLEAN NOT NULL DEFAULT false,
+          redeemed_by VARCHAR(100),
+          redeemed_at TIMESTAMPTZ
+        );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_diwali_spins_whatsapp ON diwali_spins (whatsapp);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_diwali_spins_reward_code ON diwali_spins (reward_code) WHERE reward_code IS NOT NULL AND reward_code <> '';
-    CREATE INDEX IF NOT EXISTS idx_diwali_spins_status ON diwali_spins (status);
-  `);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_diwali_spins_whatsapp ON diwali_spins (whatsapp);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_diwali_spins_reward_code ON diwali_spins (reward_code) WHERE reward_code IS NOT NULL AND reward_code <> '';
+        CREATE INDEX IF NOT EXISTS idx_diwali_spins_status ON diwali_spins (status);
+      `);
 
-  console.log('[Neon Database] diwali_spins schema and indexes verified successfully.');
+      schemaInitialized = true;
+      console.log('[Neon Database] diwali_spins schema and indexes verified successfully.');
+    })();
+  }
+  await schemaInitPromise;
 }
