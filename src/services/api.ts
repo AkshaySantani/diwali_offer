@@ -164,7 +164,7 @@ export const api = {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `akshay_footwear_spins_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `diwali_spins_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

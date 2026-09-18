@@ -18,7 +18,7 @@ export const CashierView: React.FC<CashierViewProps> = ({
   onLogout,
 }) => {
   // Login State
-  const [username, setUsername] = useState('cashier');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -191,6 +191,7 @@ export const CashierView: React.FC<CashierViewProps> = ({
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter cashier username"
                 required
                 className="w-full px-3.5 py-2.5 bg-[#140303] border border-[#F5A623]/40 rounded-xl text-[#FFF8E7] focus:outline-none focus:ring-2 focus:ring-[#F5A623]"
               />
@@ -212,7 +213,7 @@ export const CashierView: React.FC<CashierViewProps> = ({
             </div>
 
             <div className="p-2.5 rounded-lg bg-[#3A0C0C]/50 border border-[#F5A623]/20 text-[11px] text-[#F5D77F]/80">
-              💡 Credentials: <strong>cashier</strong> (Default: <code>cashier123</code> or your custom <code>CASHIER_PASSWORD</code>)
+              🔒 <strong>Cashier Desk:</strong> Enter your cashier credentials to verify vouchers.
             </div>
 
             <button

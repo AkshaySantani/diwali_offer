@@ -271,7 +271,7 @@ adminRouter.get('/export-csv', requireAuth(['ADMIN']), async (_req: Authenticate
 
     const csvContent = csvRows.join('\r\n') + '\r\n';
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="akshay_footwear_diwali_spins.csv"');
+    res.setHeader('Content-Disposition', 'attachment; filename="diwali_spins_export.csv"');
     return res.send(csvContent);
   } catch (err: any) {
     console.error('[AdminRouter] Export CSV error:', err);
